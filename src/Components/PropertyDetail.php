@@ -52,7 +52,7 @@ final class PropertyDetail extends Component
     public function render(): View
     {
         $property = $this->property();
-        return view('real-estate-properties-livewire::property-detail', ['property' => $property, 'facts' => $property->disclosureFacts(), 'gallery' => $property->galleryItems($this->mediaItems($property))]);
+        return view('real-estate-properties-livewire::property-detail', ['property' => $property, 'facts' => $property->disclosureFacts(), 'gallery' => $property->galleryItems($this->mediaItems($property)), 'videoUrl' => $this->videoUrl($property)]);
     }
 
     /** @return array<int, array{url?: string|null, kind?: string|null, caption?: string|null, staged?: bool}> */
@@ -63,6 +63,17 @@ final class PropertyDetail extends Component
         }
 
         return MediaDocument::query()->forTeam($property->team_id)->where('property_id', $property->getKey())->whereIn('kind', ['photo', 'floorplan', 'siteplan'])->orderBy('sort_order')->orderBy('id')->get()->map(fn (MediaDocument $document): array => ['url' => $document->publicUrl(), 'kind' => $document->galleryKind(), 'caption' => $document->title, 'staged' => (bool) data_get($document->metadata, 'staged', false)])->all();
+    }
+
+    private function videoUrl(Property $property): ?string
+    {
+        if (! Schema::hasTable('real_estate_media_documents')) {
+            return null;
+        }
+
+        $video = MediaDocument::query()->forTeam($property->team_id)->where('property_id', $property->getKey())->where('kind', 'video')->orderBy('sort_order')->orderBy('id')->first();
+
+        return $video?->isVideo() ? $video->publicUrl() : null;
     }
 
     private function property(): Property
