@@ -41,6 +41,15 @@
                 {!! $property->getVirtualTourEmbed() !!}
             @endif
         @endif
+        @if ($videoUrl)
+            <section aria-label="Property video">
+                <h2>Property video</h2>
+                <video class="h-full w-full" controls preload="none" aria-label="Video tour of {{ $property->title ?: $property->address }}">
+                    <source src="{{ $videoUrl }}">
+                    Your browser cannot play this video.
+                </video>
+            </section>
+        @endif
         @if ($property->model3dUrl())
             <section aria-label="3D property model">
                 <button type="button" wire:click="toggle3dModel">
