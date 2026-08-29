@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Liberu\RealEstate\PropertiesLivewire\Components;
 
 use Illuminate\Contracts\View\View;
+use Liberu\RealEstate\Properties\Application\DeletePropertySearch;
+use Liberu\RealEstate\Properties\Application\SavePropertySearch;
 use Liberu\RealEstate\Properties\Models\Property;
 use Liberu\RealEstate\Properties\Models\PropertyCategory;
+use Liberu\RealEstate\Properties\Models\PropertySavedSearch;
 use Liberu\RealEstate\Properties\Models\PropertyTemplate;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
@@ -94,9 +97,36 @@ final class AdvancedPropertySearch extends Component
 
     public bool $featuredOnly = false;
 
+    public string $savedSearchName = '';
+
+    public ?string $savedSearchMessage = null;
+
     public function updatedSearch(): void
     {
         $this->resetPage();
+    }
+
+    public function saveSearch(SavePropertySearch $save): void
+    {
+        $this->validate(['savedSearchName' => ['required', 'string', 'max:120']]);
+        $user = auth()->user(); abort_unless($user?->current_team_id !== null, 403);
+        $criteria = array_filter(['search' => $this->search, 'postalCode' => $this->postalCode, 'minPrice' => $this->minPrice, 'maxPrice' => $this->maxPrice, 'minBedrooms' => $this->minBedrooms, 'maxBedrooms' => $this->maxBedrooms, 'propertyType' => $this->propertyType, 'status' => $this->status, 'sortBy' => $this->sortBy, 'sortDirection' => $this->sortDirection, 'selectedAmenities' => $this->selectedAmenities], static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
+        $save->handle($user->current_team_id, $user->getAuthIdentifier(), $this->savedSearchName, $criteria);
+        $this->savedSearchMessage = __('Search saved successfully.'); $this->savedSearchName = '';
+    }
+
+    public function loadSearch(int $savedSearchId): void
+    {
+        $user = auth()->user(); abort_unless($user?->current_team_id !== null, 403);
+        $savedSearch = PropertySavedSearch::query()->forUser($user->current_team_id, $user->getAuthIdentifier())->findOrFail($savedSearchId);
+        foreach ($savedSearch->criteria as $property => $value) { if (property_exists($this, $property)) { $this->{$property} = $value; } }
+        $this->savedSearchMessage = __('Loaded :name.', ['name' => $savedSearch->name]); $this->resetPage();
+    }
+
+    public function deleteSearch(int $savedSearchId, DeletePropertySearch $delete): void
+    {
+        $user = auth()->user(); abort_unless($user?->current_team_id !== null, 403);
+        $delete->handle($user->current_team_id, $user->getAuthIdentifier(), $savedSearchId); $this->savedSearchMessage = __('Saved search deleted.');
     }
 
     public function applyFilters(): void
@@ -143,6 +173,7 @@ final class AdvancedPropertySearch extends Component
         $propertyTypes = Property::TYPES;
         $categories = $teamId === null ? collect() : PropertyCategory::query()->forTeam($teamId)->orderBy('name')->get();
         $templates = $teamId === null ? collect() : PropertyTemplate::query()->forTeam($teamId)->orderBy('name')->get();
+        $savedSearches = $teamId === null ? collect() : PropertySavedSearch::query()->forUser($teamId, auth()->id())->latest()->get();
         $properties = $teamId === null
             ? Property::query()->whereRaw('1 = 0')->paginate(12)
             : Property::query()->forTeam($teamId)
@@ -169,6 +200,6 @@ final class AdvancedPropertySearch extends Component
                 ->when($this->featuredOnly, fn ($query) => $query->featured())
                 ->sorted($this->sortBy, $this->sortDirection)->paginate(12);
 
-        return view('real-estate-properties-livewire::advanced-property-search', compact('properties', 'categories', 'templates', 'propertyTypes'));
+        return view('real-estate-properties-livewire::advanced-property-search', compact('properties', 'categories', 'templates', 'propertyTypes', 'savedSearches'));
     }
 }
