@@ -12,8 +12,11 @@ use Livewire\Component;
 final class PropertyTaxEstimator extends Component
 {
     public int|string $propertyId;
+
     public string $buyerType = 'home_mover';
+
     public string $country = 'GB';
+
     /** @var array<string, mixed>|null */
     public ?array $estimate = null;
 
@@ -26,7 +29,10 @@ final class PropertyTaxEstimator extends Component
     public function calculateTax(EstimatePropertyTax $estimate): void
     {
         $property = $this->property();
-        $this->estimate = $estimate->handle((float) $property->price, $this->country, ['buyer_type' => $this->buyerType]);
+
+        $this->estimate = $estimate->handle((float) $property->price, $this->country, [
+            'buyer_type' => $this->buyerType,
+        ]);
     }
 
     public function resetCalculation(): void
@@ -49,6 +55,7 @@ final class PropertyTaxEstimator extends Component
     {
         $teamId = auth()->user()?->current_team_id;
         abort_unless($teamId !== null, 403);
+
         return $teamId;
     }
 }

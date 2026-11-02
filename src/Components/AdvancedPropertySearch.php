@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Liberu\RealEstate\PropertiesLivewire\Components;
 
 use Illuminate\Contracts\View\View;
+use Illuminate\Validation\Rule;
 use Liberu\RealEstate\Properties\Application\DeletePropertySearch;
 use Liberu\RealEstate\Properties\Application\SavePropertySearch;
+use Liberu\RealEstate\Properties\Domain\PropertyStatus;
 use Liberu\RealEstate\Properties\Models\Property;
 use Liberu\RealEstate\Properties\Models\PropertyCategory;
 use Liberu\RealEstate\Properties\Models\PropertySavedSearch;
@@ -109,24 +111,51 @@ final class AdvancedPropertySearch extends Component
     public function saveSearch(SavePropertySearch $save): void
     {
         $this->validate(['savedSearchName' => ['required', 'string', 'max:120']]);
-        $user = auth()->user(); abort_unless($user?->current_team_id !== null, 403);
-        $criteria = array_filter(['search' => $this->search, 'postalCode' => $this->postalCode, 'minPrice' => $this->minPrice, 'maxPrice' => $this->maxPrice, 'minBedrooms' => $this->minBedrooms, 'maxBedrooms' => $this->maxBedrooms, 'propertyType' => $this->propertyType, 'status' => $this->status, 'sortBy' => $this->sortBy, 'sortDirection' => $this->sortDirection, 'selectedAmenities' => $this->selectedAmenities], static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
-        $save->handle($user->current_team_id, $user->getAuthIdentifier(), $this->savedSearchName, $criteria);
-        $this->savedSearchMessage = __('Search saved successfully.'); $this->savedSearchName = '';
+        $user = auth()->user();
+        abort_unless($user?->current_team_id !== null, 403);
+        $save->handle($user->current_team_id, $user->getAuthIdentifier(), $this->savedSearchName, $this->criteria());
+        $this->savedSearchMessage = __('Search saved successfully.');
+        $this->savedSearchName = '';
     }
 
     public function loadSearch(int $savedSearchId): void
     {
-        $user = auth()->user(); abort_unless($user?->current_team_id !== null, 403);
+        $user = auth()->user();
+        abort_unless($user?->current_team_id !== null, 403);
         $savedSearch = PropertySavedSearch::query()->forUser($user->current_team_id, $user->getAuthIdentifier())->findOrFail($savedSearchId);
-        foreach ($savedSearch->criteria as $property => $value) { if (property_exists($this, $property)) { $this->{$property} = $value; } }
-        $this->savedSearchMessage = __('Loaded :name.', ['name' => $savedSearch->name]); $this->resetPage();
+        foreach ($savedSearch->criteria as $property => $value) {
+            if (property_exists($this, $property)) {
+                $this->{$property} = $value;
+            }
+        }
+        $this->savedSearchMessage = __('Loaded :name.', ['name' => $savedSearch->name]);
+        $this->resetPage();
     }
 
     public function deleteSearch(int $savedSearchId, DeletePropertySearch $delete): void
     {
-        $user = auth()->user(); abort_unless($user?->current_team_id !== null, 403);
-        $delete->handle($user->current_team_id, $user->getAuthIdentifier(), $savedSearchId); $this->savedSearchMessage = __('Saved search deleted.');
+        $user = auth()->user();
+        abort_unless($user?->current_team_id !== null, 403);
+        $delete->handle($user->current_team_id, $user->getAuthIdentifier(), $savedSearchId);
+        $this->savedSearchMessage = __('Saved search deleted.');
+    }
+
+    /** @return array<string, mixed> */
+    private function criteria(): array
+    {
+        $criteria = [
+            'search' => $this->search, 'postalCode' => $this->postalCode, 'minPrice' => $this->minPrice, 'maxPrice' => $this->maxPrice,
+            'minBedrooms' => $this->minBedrooms, 'maxBedrooms' => $this->maxBedrooms, 'minBathrooms' => $this->minBathrooms, 'maxBathrooms' => $this->maxBathrooms,
+            'minArea' => $this->minArea, 'maxArea' => $this->maxArea, 'minYearBuilt' => $this->minYearBuilt, 'maxYearBuilt' => $this->maxYearBuilt,
+            'propertyType' => $this->propertyType, 'status' => $this->status, 'sortBy' => $this->sortBy, 'sortDirection' => $this->sortDirection,
+            'propertyCategoryId' => $this->propertyCategoryId, 'propertyTemplateId' => $this->propertyTemplateId, 'country' => $this->country,
+            'energyRating' => $this->energyRating, 'minEnergyScore' => $this->minEnergyScore, 'minWalkabilityScore' => $this->minWalkabilityScore,
+            'minTransitScore' => $this->minTransitScore, 'minBikeScore' => $this->minBikeScore, 'selectedAmenities' => $this->selectedAmenities,
+            'latitude' => $this->latitude, 'longitude' => $this->longitude, 'radius' => $this->radius, 'featuredOnly' => $this->featuredOnly,
+            'needsSyncingOnly' => $this->needsSyncingOnly,
+        ];
+
+        return array_filter($criteria, static fn (mixed $value): bool => $value !== null && $value !== '' && $value !== []);
     }
 
     public function applyFilters(): void
@@ -143,7 +172,7 @@ final class AdvancedPropertySearch extends Component
             'minYearBuilt' => ['nullable', ...Property::yearBuiltRules()],
             'maxYearBuilt' => ['nullable', ...Property::yearBuiltRules(), 'gte:minYearBuilt'],
             'propertyType' => ['nullable', 'string', 'max:40'],
-            'status' => ['nullable', 'string', 'in:draft,available,under_offer,sold,let,withdrawn'],
+            'status' => ['nullable', 'string', Rule::enum(PropertyStatus::class)],
             'sortBy' => ['required', 'string', 'in:created_at,updated_at,price,year_built,bedrooms,bathrooms,area_sqft,address'],
             'sortDirection' => ['required', 'string', 'in:asc,desc'],
             'propertyCategoryId' => ['nullable', 'integer', 'exists:real_estate_property_categories,id'],
@@ -200,6 +229,8 @@ final class AdvancedPropertySearch extends Component
                 ->when($this->featuredOnly, fn ($query) => $query->featured())
                 ->sorted($this->sortBy, $this->sortDirection)->paginate(12);
 
-        return view('real-estate-properties-livewire::advanced-property-search', compact('properties', 'categories', 'templates', 'propertyTypes', 'savedSearches'));
+        $mapPoints = PropertyMap::points($properties->getCollection());
+
+        return view('real-estate-properties-livewire::advanced-property-search', compact('properties', 'categories', 'templates', 'propertyTypes', 'savedSearches', 'mapPoints'));
     }
 }
